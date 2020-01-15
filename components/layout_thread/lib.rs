@@ -254,6 +254,13 @@ pub struct LayoutThread {
     /// Load web fonts synchronously to avoid non-deterministic network-driven reflows.
     load_webfonts_synchronously: bool,
 
+    /// The initial request size of the window
+    initial_window_size: Size2D<u32, DeviceIndependentPixel>,
+
+    /// The ratio of device pixels per px at the default scale.
+    /// If unspecified, will use the platform default setting.
+    device_pixels_per_px: Option<f32>,
+
     /// Dumps the display list form after a layout.
     dump_display_list: bool,
 
@@ -304,7 +311,8 @@ impl LayoutThreadFactory for LayoutThread {
         paint_time_metrics: PaintTimeMetrics,
         busy: Arc<AtomicBool>,
         load_webfonts_synchronously: bool,
-        window_size: WindowSizeData,
+        initial_window_size: Size2D<u32, DeviceIndependentPixel>,
+        device_pixels_per_px: Option<f32>,
         dump_display_list: bool,
         dump_display_list_json: bool,
         dump_style_tree: bool,
@@ -352,7 +360,8 @@ impl LayoutThreadFactory for LayoutThread {
                         paint_time_metrics,
                         busy,
                         load_webfonts_synchronously,
-                        window_size,
+                        initial_window_size,
+                        device_pixels_per_px,
                         dump_display_list,
                         dump_display_list_json,
                         dump_style_tree,
@@ -522,7 +531,8 @@ impl LayoutThread {
         paint_time_metrics: PaintTimeMetrics,
         busy: Arc<AtomicBool>,
         load_webfonts_synchronously: bool,
-        window_size: WindowSizeData,
+        initial_window_size: Size2D<u32, DeviceIndependentPixel>,
+        device_pixels_per_px: Option<f32>,
         dump_display_list: bool,
         dump_display_list_json: bool,
         dump_style_tree: bool,
@@ -597,7 +607,6 @@ impl LayoutThread {
                 text_index_response: TextIndexResponse(None),
                 nodes_from_point_response: vec![],
                 element_inner_text_response: String::new(),
-                inner_window_dimensions_response: None,
             })),
             webrender_image_cache: Arc::new(RwLock::new(FnvHashMap::default())),
             timer: if pref!(layout.animations.test.enabled) {
@@ -610,6 +619,8 @@ impl LayoutThread {
             last_iframe_sizes: Default::default(),
             busy,
             load_webfonts_synchronously,
+            initial_window_size,
+            device_pixels_per_px,
             dump_display_list,
             dump_display_list_json,
             dump_style_tree,
@@ -940,7 +951,8 @@ impl LayoutThread {
             info.paint_time_metrics,
             info.layout_is_busy,
             self.load_webfonts_synchronously,
-            info.window_size,
+            self.initial_window_size,
+            self.device_pixels_per_px,
             self.dump_display_list,
             self.dump_display_list_json,
             self.dump_style_tree,
@@ -1319,9 +1331,6 @@ impl LayoutThread {
                         &QueryMsg::ElementInnerTextQuery(_) => {
                             rw_data.element_inner_text_response = String::new();
                         },
-                        &QueryMsg::InnerWindowDimensionsQuery(_) => {
-                            rw_data.inner_window_dimensions_response = None;
-                        },
                     },
                     ReflowGoal::Full | ReflowGoal::TickAnimations => {},
                 }
@@ -1673,13 +1682,6 @@ impl LayoutThread {
                     let node = unsafe { ServoLayoutNode::new(&node) };
                     rw_data.element_inner_text_response =
                         process_element_inner_text_query(node, &rw_data.indexable_text);
-                },
-                &QueryMsg::InnerWindowDimensionsQuery(browsing_context_id) => {
-                    rw_data.inner_window_dimensions_response = self
-                        .last_iframe_sizes
-                        .borrow()
-                        .get(&browsing_context_id)
-                        .cloned();
                 },
             },
             ReflowGoal::Full | ReflowGoal::TickAnimations => {},
